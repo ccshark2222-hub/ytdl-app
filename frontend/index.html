@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Stash — local video downloader</title>
+<style>
+  :root {
+    --bg: #16171b;
+    --panel: #1e2025;
+    --panel-2: #26282f;
+    --line: #33363f;
+    --ink: #e8e6e1;
+    --muted: #9a9ba1;
+    --amber: #e8a33d;
+    --amber-dim: #b57e2c;
+    --green: #6fbf73;
+    --red: #d76b6b;
+    --mono: "SF Mono", "JetBrains Mono", "Fira Code", ui-monospace, Menlo, monospace;
+    --sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(1200px 500px at 50% -200px, #202228 0%, var(--bg) 60%);
+    color: var(--ink);
+    font-family: var(--sans);
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    padding: 48px 20px 80px;
+  }
+  .wrap { width: 100%; max-width: 720px; }
+
+  header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 4px; }
+  .logo {
+    font-family: var(--mono);
+    font-weight: 700;
+    font-size: 22px;
+    letter-spacing: -0.5px;
+    color: var(--ink);
+  }
+  .logo .dot { color: var(--amber); }
+  .tag { color: var(--muted); font-size: 13px; }
+  .sub { color: var(--muted); font-size: 13px; margin: 10px 0 28px; line-height: 1.5; }
+
+  .bar { display: flex; gap: 10px; }
+  input[type="text"] {
+    flex: 1;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    color: var(--ink);
+    padding: 14px 16px;
+    border-radius: 10px;
+    font-size: 15px;
+    font-family: var(--mono);
+    outline: none;
+    transition: border-color .15s;
+  }
+  input[type="text"]:focus { border-color: var(--amber-dim); }
+  input[type="text"]::placeholder { color: #6b6d75; }
+
+  button {
+    font-family: var(--sans);
+    cursor: pointer;
+    border: none;
+    border-radius: 10px;
+    font-weight: 600;
+    transition: transform .05s, background .15s, opacity .15s;
+  }
+  button:active { transform: translateY(1px); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+
+  .btn-fetch {
+    background: var(--amber);
+    color: #201a0c;
+    padding: 0 22px;
+    font-size: 15px;
+  }
+  .btn-fetch:hover:not(:disabled) { background: #f0b054; }
+
+  .msg { margin-top: 16px; font-size: 14px; min-height: 20px; }
+  .msg.err { color: var(--red); }
+  .msg.info { color: var(--muted); }
+
+  /* result card */
+  .card {
+    margin-top: 24px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    overflow: hidden;
+    display: none;
+  }
+  .card.show { display: block; animation: rise .25s ease; }
+  @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+  .meta { display: flex; gap: 16px; padding: 16px; border-bottom: 1px solid var(--line); }
+  .thumb {
+    width: 160px; height: 90px; border-radius: 8px; object-fit: cover;
+    background: var(--panel-2); flex-shrink: 0;
+  }
+  .meta-txt { min-width: 0; }
+  .title {
+    font-size: 16px; font-weight: 600; line-height: 1.35;
+    margin: 2px 0 6px;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .facts { color: var(--muted); font-size: 13px; font-family: var(--mono); }
+  .facts span + span::before { content: "·"; margin: 0 8px; color: var(--line); }
+
+  /* mode toggle */
+  .modes { display: flex; gap: 8px; padding: 16px 16px 0; }
+  .mode {
+    flex: 1; text-align: center; padding: 9px; border-radius: 8px;
+    background: var(--panel-2); border: 1px solid var(--line);
+    color: var(--muted); font-size: 13px; font-weight: 600;
+  }
+  .mode.active { color: var(--amber); border-color: var(--amber-dim); background: #2a251a; }
+
+  .section-label {
+    padding: 16px 16px 8px; font-size: 11px; text-transform: uppercase;
+    letter-spacing: 1px; color: var(--muted); font-weight: 600;
+  }
+
+  .formats { padding: 0 16px 8px; }
+  .fmt {
+    display: flex; align-items: center; gap: 12px;
+    padding: 11px 12px; border-radius: 8px; cursor: pointer;
+    border: 1px solid transparent;
+  }
+  .fmt:hover { background: var(--panel-2); }
+  .fmt.sel { background: #2a251a; border-color: var(--amber-dim); }
+  .fmt .radio {
+    width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--line);
+    flex-shrink: 0; position: relative;
+  }
+  .fmt.sel .radio { border-color: var(--amber); }
+  .fmt.sel .radio::after {
+    content: ""; position: absolute; inset: 3px; border-radius: 50%; background: var(--amber);
+  }
+  .fmt .res { font-family: var(--mono); font-weight: 600; font-size: 14px; width: 70px; }
+  .fmt .ext { font-family: var(--mono); font-size: 12px; color: var(--muted); width: 52px; }
+  .fmt .size { font-family: var(--mono); font-size: 13px; color: var(--muted); margin-left: auto; }
+  .fmt .best {
+    font-size: 10px; text-transform: uppercase; letter-spacing: .5px;
+    color: var(--amber); border: 1px solid var(--amber-dim); border-radius: 4px;
+    padding: 1px 5px;
+  }
+
+  .go { padding: 16px; border-top: 1px solid var(--line); }
+  .btn-download {
+    width: 100%; background: var(--green); color: #10240f;
+    padding: 14px; font-size: 15px;
+  }
+  .btn-download:hover:not(:disabled) { background: #82cf86; }
+
+  /* progress */
+  .progress { display: none; padding: 16px; border-top: 1px solid var(--line); }
+  .progress.show { display: block; }
+  .track { height: 8px; background: var(--panel-2); border-radius: 6px; overflow: hidden; }
+  .fill { height: 100%; width: 0%; background: var(--amber); border-radius: 6px; transition: width .3s; }
+  .pstat {
+    display: flex; justify-content: space-between; margin-top: 10px;
+    font-family: var(--mono); font-size: 12px; color: var(--muted);
+  }
+  .pstat .state { color: var(--ink); }
+
+  footer { margin-top: 32px; color: #5c5e66; font-size: 12px; line-height: 1.6; }
+  footer code { font-family: var(--mono); color: var(--muted); }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="logo">stash<span class="dot">.</span></div>
+      <div class="tag">local video downloader</div>
+    </header>
+    <p class="sub">
+      Paste a link, pick your quality, save it. Runs entirely on your machine —
+      no ads, no upsells, full available resolution.
+    </p>
+
+    <div class="bar">
+      <input id="url" type="text" placeholder="Paste a YouTube link…" autocomplete="off" spellcheck="false" />
+      <button id="fetch" class="btn-fetch">Fetch</button>
+    </div>
+    <div id="msg" class="msg"></div>
+
+    <div id="card" class="card">
+      <div class="meta">
+        <img id="thumb" class="thumb" alt="" />
+        <div class="meta-txt">
+          <div id="title" class="title"></div>
+          <div class="facts">
+            <span id="channel"></span>
+            <span id="duration"></span>
+            <span id="views"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="modes">
+        <div class="mode active" data-mode="video">Video (MP4)</div>
+        <div class="mode" data-mode="audio">Audio only (MP3)</div>
+      </div>
+
+      <div id="videoSection">
+        <div class="section-label">Choose quality</div>
+        <div id="formats" class="formats"></div>
+      </div>
+
+      <div id="audioSection" style="display:none">
+        <div class="section-label">Audio</div>
+        <div class="formats">
+          <div class="fmt sel">
+            <div class="radio"></div>
+            <div class="res">MP3</div>
+            <div class="ext">192kbps</div>
+            <div id="audioSize" class="size"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="go">
+        <button id="download" class="btn-download">Download</button>
+      </div>
+
+      <div id="progress" class="progress">
+        <div class="track"><div id="fill" class="fill"></div></div>
+        <div class="pstat">
+          <span id="pstate" class="state">Starting…</span>
+          <span id="pmeta"></span>
+        </div>
+      </div>
+    </div>
+
+    <footer>
+      Powered by <code>yt-dlp</code> + <code>ffmpeg</code>, running on <code>localhost</code>.
+      For personal use — your own content, or material you have the rights to.
+    </footer>
+  </div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let currentInfo = null;
+let selectedFormat = null;
+let mode = "video";
+let poller = null;
+
+function fmtViews(n) {
+  if (!n) return "";
+  if (n >= 1e6) return (n/1e6).toFixed(1) + "M views";
+  if (n >= 1e3) return (n/1e3).toFixed(1) + "K views";
+  return n + " views";
+}
+
+async function fetchInfo() {
+  const url = $("url").value.trim();
+  if (!url) { setMsg("Paste a link first.", "err"); return; }
+  setMsg("Reading video…", "info");
+  $("fetch").disabled = true;
+  $("card").classList.remove("show");
+  try {
+    const r = await fetch("/api/info", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({url}),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || "Failed to read video.");
+    currentInfo = data;
+    renderCard(data);
+    setMsg("", "");
+  } catch (e) {
+    setMsg(e.message, "err");
+  } finally {
+    $("fetch").disabled = false;
+  }
+}
+
+function renderCard(d) {
+  $("thumb").src = d.thumbnail || "";
+  $("title").textContent = d.title || "Untitled";
+  $("channel").textContent = d.channel || "";
+  $("duration").textContent = d.duration_string || "";
+  $("views").textContent = fmtViews(d.view_count);
+  $("audioSize").textContent = d.audio_size_human ? "~" + d.audio_size_human : "";
+
+  const box = $("formats");
+  box.innerHTML = "";
+  selectedFormat = null;
+  (d.video_options || []).forEach((f, i) => {
+    const row = document.createElement("div");
+    row.className = "fmt" + (i === 0 ? " sel" : "");
+    if (i === 0) selectedFormat = f.format_id;
+    const size = f.filesize_human ? (f.filesize ? f.filesize_human : "~" + f.filesize_human) : "size varies";
+    row.innerHTML = `
+      <div class="radio"></div>
+      <div class="res">${f.label}${f.fps && f.fps > 30 ? f.fps : ""}</div>
+      <div class="ext">${f.ext}</div>
+      ${i === 0 ? '<div class="best">best</div>' : ''}
+      <div class="size">${size}</div>`;
+    row.onclick = () => {
+      document.querySelectorAll("#formats .fmt").forEach(el => el.classList.remove("sel"));
+      row.classList.add("sel");
+      selectedFormat = f.format_id;
+    };
+    box.appendChild(row);
+  });
+  if (!d.video_options || !d.video_options.length) {
+    box.innerHTML = '<div class="section-label">No video streams found.</div>';
+  }
+  $("card").classList.add("show");
+  $("progress").classList.remove("show");
+  $("download").disabled = false;
+  $("download").textContent = "Download";
+}
+
+// mode toggle
+document.querySelectorAll(".mode").forEach(m => {
+  m.onclick = () => {
+    document.querySelectorAll(".mode").forEach(x => x.classList.remove("active"));
+    m.classList.add("active");
+    mode = m.dataset.mode;
+    $("videoSection").style.display = mode === "video" ? "" : "none";
+    $("audioSection").style.display = mode === "audio" ? "" : "none";
+  };
+});
+
+async function startDownload() {
+  if (!currentInfo) return;
+  $("download").disabled = true;
+  $("download").textContent = "Working…";
+  $("progress").classList.add("show");
+  $("fill").style.width = "0%";
+  $("pstate").textContent = "Starting…";
+  $("pmeta").textContent = "";
+
+  try {
+    const r = await fetch("/api/download", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        url: currentInfo.webpage_url,
+        format_id: mode === "video" ? selectedFormat : null,
+        mode,
+      }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || "Download failed to start.");
+    pollProgress(data.job_id);
+  } catch (e) {
+    setMsg(e.message, "err");
+    $("download").disabled = false;
+    $("download").textContent = "Download";
+  }
+}
+
+function pollProgress(jobId) {
+  clearInterval(poller);
+  poller = setInterval(async () => {
+    try {
+      const r = await fetch(`/api/progress/${jobId}`);
+      const j = await r.json();
+      const pct = j.percent || 0;
+      $("fill").style.width = pct + "%";
+
+      if (j.status === "downloading") {
+        $("pstate").textContent = `Downloading ${pct.toFixed(0)}%`;
+        const bits = [];
+        if (j.speed) bits.push(j.speed);
+        if (j.eta) bits.push(`${j.eta}s left`);
+        $("pmeta").textContent = bits.join("  ·  ");
+      } else if (j.status === "processing") {
+        $("pstate").textContent = "Merging audio + video…";
+        $("pmeta").textContent = "";
+      } else if (j.status === "done") {
+        clearInterval(poller);
+        $("fill").style.width = "100%";
+        $("pstate").textContent = "Done — saving file";
+        $("pmeta").textContent = j.filename || "";
+        // trigger the browser save
+        window.location.href = `/api/file/${jobId}`;
+        $("download").disabled = false;
+        $("download").textContent = "Download again";
+      } else if (j.status === "error") {
+        clearInterval(poller);
+        $("pstate").textContent = "Error";
+        setMsg(j.error || "Something went wrong.", "err");
+        $("download").disabled = false;
+        $("download").textContent = "Download";
+      }
+    } catch (e) {
+      clearInterval(poller);
+      setMsg("Lost connection to the downloader.", "err");
+      $("download").disabled = false;
+      $("download").textContent = "Download";
+    }
+  }, 500);
+}
+
+function setMsg(text, cls) {
+  const m = $("msg");
+  m.textContent = text;
+  m.className = "msg " + (cls || "");
+}
+
+$("fetch").onclick = fetchInfo;
+$("download").onclick = startDownload;
+$("url").addEventListener("keydown", e => { if (e.key === "Enter") fetchInfo(); });
+</script>
+</body>
+</html>
