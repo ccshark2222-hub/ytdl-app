@@ -36,6 +36,38 @@ Ctrl+C in the terminal to stop.
 
 ---
 
+## Known issue: YouTube downloads are currently broken upstream
+
+As of September 2026, YouTube rolled out a new streaming system ("SABR")
+that stops handing back a plain downloadable URL for most yt-dlp client
+types — this affects every yt-dlp-based downloader, not just this app.
+It's an open, unresolved bug in yt-dlp itself:
+https://github.com/yt-dlp/yt-dlp/issues/12482 (fix in progress as PR #13515,
+not yet released).
+
+What's already in place and working here, so nothing else needs fixing
+once yt-dlp ships the SABR fix:
+- Cookie auth (reuses your logged-in browser session — see `COOKIES_FROM_BROWSER`
+  in `backend/server.py`, currently set to `"edge"`)
+- PO-token generation via the `bgutil-ytdlp-pot-provider` plugin, whose
+  companion Node server lives at `~/bgutil-ytdlp-pot-provider` (outside this
+  repo — it's machine-local infra, like the venv, not project code). Setup:
+  ```
+  git clone https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git ~/bgutil-ytdlp-pot-provider
+  cd ~/bgutil-ytdlp-pot-provider/server && npm install && npx tsc
+  ```
+- The `yt-dlp[default]` extra in `requirements.txt`, which bundles the
+  JS challenge-solver yt-dlp needs for signature decryption.
+
+**When it'll start working again:** run `pip install -U "yt-dlp[default]"`
+periodically. Once the SABR fix ships upstream, that one command picks it
+up — no code changes needed here.
+
+**Not affected:** non-YouTube sites (Vimeo, Twitch clips, etc.) don't hit
+this issue since the SABR rollout is YouTube-specific.
+
+---
+
 ## How it works
 
 - **`backend/server.py`** — FastAPI app. `/api/info` reads a video's metadata and
