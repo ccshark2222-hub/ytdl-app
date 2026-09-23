@@ -27,6 +27,23 @@ FRONTEND_DIR = APP_DIR / "frontend"
 DOWNLOAD_DIR = APP_DIR / "downloads"
 DOWNLOAD_DIR.mkdir(exist_ok=True)
 
+# YouTube now demands proof-of-not-a-bot on a lot of requests. The fix yt-dlp
+# itself recommends is reusing cookies from a browser you're already logged
+# into YouTube with. Change this if you're logged in somewhere other than Edge
+# (options: "chrome", "chromium", "brave", "firefox", "safari", "opera",
+# "vivaldi", "whale"). First run may show a one-time macOS Keychain prompt —
+# that's yt-dlp decrypting the browser's cookie store, approve it.
+COOKIES_FROM_BROWSER = ("edge",)
+
+
+def _base_ydl_opts(**extra):
+    return {
+        "quiet": True,
+        "no_warnings": True,
+        "cookiesfrombrowser": COOKIES_FROM_BROWSER,
+        **extra,
+    }
+
 app = FastAPI(title="Local YouTube Downloader")
 
 # In-memory job store: job_id -> {status, percent, speed, eta, filepath, filename, error}
@@ -74,7 +91,7 @@ def get_info(req: InfoRequest):
     if not _looks_like_youtube(url):
         raise HTTPException(400, "That doesn't look like a YouTube link.")
 
-    ydl_opts = {"quiet": True, "no_warnings": True, "skip_download": True}
+    ydl_opts = _base_ydl_opts(skip_download=True)
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
@@ -151,16 +168,14 @@ def _run_download(job_id: str, url: str, format_id: str | None, mode: str, title
             JOBS[job_id].update(status="processing", percent=100.0)
 
     if mode == "audio":
-        ydl_opts = {
-            "format": "bestaudio/best",
-            "outtmpl": outtmpl,
-            "quiet": True,
-            "no_warnings": True,
-            "progress_hooks": [hook],
-            "postprocessors": [
+        ydl_opts = _base_ydl_opts(
+            format="bestaudio/best",
+            outtmpl=outtmpl,
+            progress_hooks=[hook],
+            postprocessors=[
                 {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"}
             ],
-        }
+        )
     else:
         # If a specific video format was chosen, pair it with best audio and let
         # ffmpeg merge into mp4. Fallback to best overall.
@@ -168,14 +183,12 @@ def _run_download(job_id: str, url: str, format_id: str | None, mode: str, title
             fmt = f"{format_id}+bestaudio/best"
         else:
             fmt = "bestvideo+bestaudio/best"
-        ydl_opts = {
-            "format": fmt,
-            "outtmpl": outtmpl,
-            "quiet": True,
-            "no_warnings": True,
-            "progress_hooks": [hook],
-            "merge_output_format": "mp4",
-        }
+        ydl_opts = _base_ydl_opts(
+            format=fmt,
+            outtmpl=outtmpl,
+            progress_hooks=[hook],
+            merge_output_format="mp4",
+        )
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -205,7 +218,7 @@ def start_download(req: DownloadRequest):
 
     # grab title for the eventual filename
     try:
-        with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True, "skip_download": True}) as ydl:
+        with yt_dlp.YoutubeDL(_base_ydl_opts(skip_download=True)) as ydl:
             info = ydl.extract_info(url, download=False)
             title = info.get("title", "video")
     except Exception:
